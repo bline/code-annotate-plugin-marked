@@ -7,11 +7,12 @@
     "test": "test"
   },
   "peerDependencies": {
-    "code-annotate": "1.x.x"
+    "code-annotate": "1.0.x"
   },
   "dependencies": {
+    "debug": "2.1.x",
     "lodash": "2.4.x",
-    "marked": "^0.3.2"
+    "marked": "0.3.x"
   },
   "devDependencies": {
     "del": "^0.1.3",

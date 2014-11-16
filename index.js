@@ -10,22 +10,21 @@
 (function () {
   'use strict';
   var _ = require('lodash');
-  var path = require('path');
-  var util = require('util');
-  var plugin = require('code-annotate/plugin');
   var marked = require('marked');
+  var debug = require('debug')('code-annotate:marked');
 
-  function Marked(annotate) {
-    plugin.apply(this, arguments);
-    this.highlighter = function (lang, code) {
-      return (new marked.Renderer()).code(code, lang);
-    };
-    this.anno.plugins.on('plugin-highlighter', function (highlighter) {
-      this.highlighter = highlighter.highlight.bind(highlighter); }.bind(this));
+  function Marked() {
+    Marked.super_.apply(this, arguments);
   }
-  util.inherits(Marked, plugin);
-  Marked.name = 'marked';
-  Marked.defaults = {
+  module.exports = require('code-annotate-plugin-base').extend({
+    name: 'marked',
+    isFileFormatter: true,
+    Plugin: Marked
+  });
+  Marked.defaultOptions = {
+    tokSkipFirst: true,
+    tocOmit: [],
+
     gfm: true,
     tables: true,
     breaks: false,
@@ -35,27 +34,48 @@
     smartypants: false
   };
 
-  Marked.prototype.init = function (opt) {
-    var that = this, allMarkdown = '', allSections = [];
-    plugin.prototype.init.apply(this, arguments);
-    this.anno.on('section', function (section) {
-      allSections.push(section);
-      allMarkdown += section.docsText + '\n\n';
-    });
-    this.anno.on('files', function (files) {
-      var links = marked.lexer(allMarkdown, this.opt).links;
-      allSections.forEach(function (section) {
-        this.markedSection(section, links);
-      }.bind(this));
-    }.bind(this));
+  Marked.prototype.formatFile = function (annotation, callback) {
+    var links, allMarkdown = '', files = annotation.file,
+      on = outcome.error(callback);
+      opt = this.loader.params('marked');
+    this.loader.loadModule({isCodeHighlighter: true}, on.success(function (service) {
+      that.highlighter = service.highlight.bind(service);
+      files.forEach(function (file) {
+        file.sections.forEach(function (section) {
+          allMarkdown += section.docsText + '\n\n';
+        });
+      });
+      links = marked.lexer(allMarkdown, opt).links;
+      async.each(files, function (file, next) {
+        async.each(file.sections, function (section, next) {
+          that.markedSection(section, links, next);
+        }, next);
+      }, callback);
+    }));
   };
-  Marked.prototype.markedSection = function (section, links) {
-    var config, lexer, tokens;
+  Marked.prototype.filterTOC = function (text) {
+    var opt = this.loader.params('marked');
+    if (!_.isArray(opt.tocOmit))
+      opt.tocOmit = [opt.tocOmit];
+
+    var omit = ['TOC', 'TABLE OF CONTENTS']
+      .concat(opt.tocOmit)
+      .map(function (txt) {
+        return txt.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');})
+      .join('|');
+    var re = new RegExp("(?:" + omit + ')');
+    return re.test(text);
+  };
+  Marked.prototype.markedSection = function (section, links, next) {
+    var config, lexer, tokens, file = section.file,
+      opt = this.loader.params('marked');
+    if (!file.toc) file.toc = [];
+
     lexer = new marked.Lexer();
     lexer.tokens.links = links;
     tokens = lexer.lex(section.docsText, this.opt);
-    tokens.forEach(function (token) {
-      var lineMatch, lang = token.lang, line;
+    tokens.forEach(function (token, i) {
+      var lineMatch, lang = token.lang, line, depth, id;
       if (token.type === 'code') {
         lineMatch = /^(\w+):(\d+)$/.exec(lang);
         if (lineMatch) {
@@ -64,9 +84,17 @@
         }
         token.text = this.highlighter(lang, token.text, line);
         token.escaped = true;
+      } else if (token.type === 'heading' && !this.filterTOC(token.text)) {
+        if (i === 0 && opt.tocSkipFirst === true)
+          return;
+        depth = token.depth;
+        if (opt.tocSkipFirst && depth != 0)
+          depth--;
+        id = token.text.toLowerCase().replace(/[^\w]+/g, '-');
+        file.toc.push({ id: id, heading: token.text, depth: depth });
       }
     }.bind(this));
-    section.docsHl = marked.Parser.parse(tokens, config);
+    section.docsRendered = marked.Parser.parse(tokens, config);
+    next();
   };
-  module.exports = Marked;
 })();
