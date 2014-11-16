@@ -69,7 +69,7 @@
   Marked.prototype.markedSection = function (section, links, next) {
     var config, lexer, tokens, file = section.file,
       opt = this.loader.params('marked');
-    if (!file.toc) file.toc = [];
+    if (!file.makredToc) file.markedToc = [];
 
     lexer = new marked.Lexer();
     lexer.tokens.links = links;
@@ -91,10 +91,10 @@
         if (opt.tocSkipFirst && depth != 0)
           depth--;
         id = token.text.toLowerCase().replace(/[^\w]+/g, '-');
-        file.toc.push({ id: id, heading: token.text, depth: depth });
+        file.markedToc.push({ id: id, heading: token.text, depth: depth });
       }
     }.bind(this));
-    section.docsRendered = marked.Parser.parse(tokens, config);
+    section.markedRendered = marked.Parser.parse(tokens, config);
     next();
   };
 })();
